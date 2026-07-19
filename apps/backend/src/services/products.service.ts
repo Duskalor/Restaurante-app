@@ -1,9 +1,11 @@
+import type { ProductWithRelations } from '@restaurante/shared';
 import prisma from '../prisma';
 import type { AuthUser } from '../types/express';
 import { restaurantWhere } from '../utils/scopes';
+import { assertWire } from '../utils/wire';
 
-export function listProducts(user?: AuthUser) {
-  return prisma.product.findMany({
+export async function listProducts(user?: AuthUser): Promise<ProductWithRelations[]> {
+  const products = await prisma.product.findMany({
     where: restaurantWhere(user),
     orderBy: { createdAt: 'desc' },
     include: {
@@ -11,6 +13,8 @@ export function listProducts(user?: AuthUser) {
       branch: true,
     },
   });
+
+  return assertWire(products);
 }
 
 export interface CreateProductInput {
@@ -26,8 +30,8 @@ export interface CreateProductInput {
   imageUrl?: string | null;
 }
 
-export function createProduct(input: CreateProductInput) {
-  return prisma.product.create({
+export async function createProduct(input: CreateProductInput): Promise<ProductWithRelations> {
+  const product = await prisma.product.create({
     data: {
       branchId: input.branchId,
       categoryId: input.categoryId || null,
@@ -46,6 +50,8 @@ export function createProduct(input: CreateProductInput) {
       branch: true,
     },
   });
+
+  return assertWire(product);
 }
 
 export interface UpdateProductInput {
@@ -61,7 +67,10 @@ export interface UpdateProductInput {
   imageUrl?: string | null;
 }
 
-export function updateProduct(id: string, input: UpdateProductInput) {
+export async function updateProduct(
+  id: string,
+  input: UpdateProductInput
+): Promise<ProductWithRelations> {
   const {
     categoryId,
     sku,
@@ -75,7 +84,7 @@ export function updateProduct(id: string, input: UpdateProductInput) {
     imageUrl,
   } = input;
 
-  return prisma.product.update({
+  const product = await prisma.product.update({
     where: { id },
     data: {
       categoryId: categoryId || null,
@@ -104,6 +113,8 @@ export function updateProduct(id: string, input: UpdateProductInput) {
       branch: true,
     },
   });
+
+  return assertWire(product);
 }
 
 export function deleteProduct(id: string) {

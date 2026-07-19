@@ -1,10 +1,12 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import type { LoginResponse } from '@restaurante/shared';
 import { env } from '../config/env';
 import prisma from '../prisma';
 import { HttpError } from '../utils/errors';
+import { assertWire } from '../utils/wire';
 
-export async function login(email: string, password: string) {
+export async function login(email: string, password: string): Promise<LoginResponse> {
   const user = await prisma.user.findUnique({
     where: { email },
     include: {
@@ -64,9 +66,9 @@ export async function login(email: string, password: string) {
 
   const { passwordHash: _passwordHash, ...userWithoutPassword } = user;
 
-  return {
+  return assertWire({
     message: 'Login correcto',
     token,
     user: userWithoutPassword,
-  };
+  });
 }

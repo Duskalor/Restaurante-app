@@ -1,11 +1,13 @@
 import type { TableStatus } from '@prisma/client';
+import type { Table, TableWithRelations } from '@restaurante/shared';
 import prisma from '../prisma';
 import type { AuthUser } from '../types/express';
 import { HttpError } from '../utils/errors';
 import { restaurantWhere } from '../utils/scopes';
+import { assertWire } from '../utils/wire';
 
-export function listTables(user?: AuthUser) {
-  return prisma.table.findMany({
+export async function listTables(user?: AuthUser): Promise<TableWithRelations[]> {
+  const tables = await prisma.table.findMany({
     where: restaurantWhere(user),
     orderBy: { number: 'asc' },
     include: {
@@ -13,6 +15,8 @@ export function listTables(user?: AuthUser) {
       diningArea: true,
     },
   });
+
+  return assertWire(tables);
 }
 
 export interface CreateTableInput {
@@ -26,8 +30,8 @@ export interface CreateTableInput {
   posY?: unknown;
 }
 
-export function createTable(input: CreateTableInput) {
-  return prisma.table.create({
+export async function createTable(input: CreateTableInput): Promise<TableWithRelations> {
+  const table = await prisma.table.create({
     data: {
       branchId: input.branchId,
       diningAreaId: input.diningAreaId || null,
@@ -43,13 +47,17 @@ export function createTable(input: CreateTableInput) {
       diningArea: true,
     },
   });
+
+  return assertWire(table);
 }
 
-export function updateTableStatus(id: string, status: TableStatus) {
-  return prisma.table.update({
+export async function updateTableStatus(id: string, status: TableStatus): Promise<Table> {
+  const table = await prisma.table.update({
     where: { id },
     data: { status },
   });
+
+  return assertWire(table);
 }
 
 export async function deleteTable(id: string) {

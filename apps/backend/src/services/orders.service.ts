@@ -1,11 +1,18 @@
 import type { OrderChannel, OrderType } from '@prisma/client';
+import type {
+  CreatedOrder,
+  OrderDetail,
+  OrderItemWithProduct,
+  OrderListItem,
+} from '@restaurante/shared';
 import prisma from '../prisma';
 import type { AuthUser } from '../types/express';
 import { HttpError } from '../utils/errors';
 import { restaurantWhere } from '../utils/scopes';
+import { assertWire } from '../utils/wire';
 
-export function listOrders(user?: AuthUser) {
-  return prisma.order.findMany({
+export async function listOrders(user?: AuthUser): Promise<OrderListItem[]> {
+  const orders = await prisma.order.findMany({
     where: restaurantWhere(user),
     orderBy: { createdAt: 'desc' },
     include: {
@@ -16,10 +23,12 @@ export function listOrders(user?: AuthUser) {
       payments: true,
     },
   });
+
+  return assertWire(orders);
 }
 
-export function getOrderById(id: string, user?: AuthUser) {
-  return prisma.order.findFirst({
+export async function getOrderById(id: string, user?: AuthUser): Promise<OrderDetail | null> {
+  const order = await prisma.order.findFirst({
     where: user?.isSuperAdmin
       ? { id }
       : {
@@ -41,6 +50,8 @@ export function getOrderById(id: string, user?: AuthUser) {
       payments: true,
     },
   });
+
+  return order ? assertWire(order) : null;
 }
 
 export interface CreateOrderInput {
@@ -55,7 +66,7 @@ export interface CreateOrderInput {
   notes?: string | null;
 }
 
-export async function createOrder(input: CreateOrderInput) {
+export async function createOrder(input: CreateOrderInput): Promise<CreatedOrder> {
   const count = await prisma.order.count({ where: { branchId: input.branchId } });
   const orderNumber = `ORD-${String(count + 1).padStart(4, '0')}`;
 
@@ -94,7 +105,7 @@ export async function createOrder(input: CreateOrderInput) {
     });
   }
 
-  return order;
+  return assertWire(order);
 }
 
 export interface AddOrderItemInput {
@@ -104,7 +115,10 @@ export interface AddOrderItemInput {
   discountAmount?: unknown;
 }
 
-export async function addOrderItem(orderId: string, input: AddOrderItemInput) {
+export async function addOrderItem(
+  orderId: string,
+  input: AddOrderItemInput
+): Promise<OrderItemWithProduct> {
   const order = await prisma.order.findUnique({ where: { id: orderId } });
   if (!order) {
     throw new HttpError('Pedido no encontrado', 404);
@@ -166,7 +180,7 @@ export async function addOrderItem(orderId: string, input: AddOrderItemInput) {
     },
   });
 
-  return orderItem;
+  return assertWire(orderItem);
 }
 
 export interface UpdateOrderItemInput {

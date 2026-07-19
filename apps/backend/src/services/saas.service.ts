@@ -1,22 +1,30 @@
 import bcrypt from 'bcryptjs';
+import type {
+  CreateRestaurantResponse,
+  GetStatsResponse,
+  RenewSubscriptionResponse,
+  ResetPasswordResponse,
+  SaasRestaurant,
+} from '@restaurante/shared';
 import prisma from '../prisma';
 import { HttpError } from '../utils/errors';
+import { assertWire } from '../utils/wire';
 
-export async function getStats() {
+export async function getStats(): Promise<GetStatsResponse> {
   const totalRecaudado = await prisma.subscription.aggregate({
     _sum: { amount: true },
     where: { status: 'ACTIVE' },
   });
   const totalRestaurantes = await prisma.restaurant.count();
 
-  return {
+  return assertWire({
     totalIngresos: totalRecaudado._sum.amount || 0,
     totalRestaurantes,
-  };
+  });
 }
 
-export function listRestaurants() {
-  return prisma.restaurant.findMany({
+export async function listRestaurants(): Promise<SaasRestaurant[]> {
+  const restaurants = await prisma.restaurant.findMany({
     orderBy: { createdAt: 'desc' },
     include: {
       branches: {
@@ -38,6 +46,8 @@ export function listRestaurants() {
       },
     },
   });
+
+  return assertWire(restaurants);
 }
 
 export interface CreateRestaurantInput {
@@ -60,7 +70,7 @@ export interface CreateRestaurantInput {
   branchCode?: string | null;
 }
 
-export function createRestaurant(input: CreateRestaurantInput) {
+export function createRestaurant(input: CreateRestaurantInput): Promise<CreateRestaurantResponse> {
   return prisma.$transaction(async (tx) => {
     const restaurant = await tx.restaurant.create({
       data: {
@@ -125,16 +135,20 @@ export function createRestaurant(input: CreateRestaurantInput) {
       },
     });
 
-    return {
+    return assertWire({
       restaurant,
       branch,
       user,
       subscription,
-    };
+    });
   });
 }
 
-export async function resetPassword(restaurantId: string, userId: string | undefined, newPassword: string) {
+export async function resetPassword(
+  restaurantId: string,
+  userId: string | undefined,
+  newPassword: string
+): Promise<ResetPasswordResponse> {
   const restaurant = await prisma.restaurant.findUnique({
     where: { id: restaurantId },
     include: {
@@ -167,14 +181,18 @@ export async function resetPassword(restaurantId: string, userId: string | undef
     data: { passwordHash },
   });
 
-  return {
+  return assertWire({
     message: 'Contraseña restablecida correctamente',
     userId: targetUser.id,
     email: targetUser.email,
-  };
+  });
 }
 
-export async function renewSubscription(restaurantId: string, plan: string, amount: unknown) {
+export async function renewSubscription(
+  restaurantId: string,
+  plan: string,
+  amount: unknown
+): Promise<RenewSubscriptionResponse> {
   const restaurant = await prisma.restaurant.findUnique({
     where: { id: restaurantId },
   });
@@ -220,10 +238,10 @@ export async function renewSubscription(restaurantId: string, plan: string, amou
     return { updatedRestaurant, newSubscription };
   });
 
-  return {
+  return assertWire({
     message: 'Suscripción reactivada correctamente',
     expiresAt: result.updatedRestaurant.expiresAt,
-  };
+  });
 }
 
 export async function deleteRestaurant(restaurantId: string) {

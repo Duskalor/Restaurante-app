@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",
+    "@restaurante/shared": "workspace:*",
     "axios": "^1.13.6",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
