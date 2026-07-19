@@ -1,49 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
+import type { SaasRestaurant } from '@restaurante/shared';
 import Field from '../../components/Field';
-import { API_URL } from '../../lib/api';
-
-interface SaasUser {
-  id: string;
-  email?: string | null;
-  firstName?: string | null;
-  lastName?: string | null;
-  isActive?: boolean;
-  createdAt?: string;
-}
-
-interface SaasBranch {
-  id: string;
-  name?: string | null;
-  code?: string | null;
-}
-
-interface SaasSubscription {
-  id: string;
-  planType?: string | null;
-  amount?: number | string | null;
-  startsAt?: string | null;
-  endsAt?: string | null;
-  createdAt?: string;
-}
-
-interface SaasRestaurant {
-  id: string;
-  name?: string | null;
-  slug?: string | null;
-  subdomain?: string | null;
-  ruc?: string | null;
-  phone?: string | null;
-  address?: string | null;
-  status?: string | null;
-  planType?: string | null;
-  amount?: number | string | null;
-  startsAt?: string | null;
-  expiresAt?: string | null;
-  users?: SaasUser[];
-  branches?: SaasBranch[];
-  subscriptions?: SaasSubscription[];
-}
+import { ApiError, apiFetch } from '../../lib/api';
 
 interface SaaSPanelProps {
   token: string;
@@ -52,6 +11,33 @@ interface SaaSPanelProps {
 
 const errorMessage = (err: unknown, fallback: string) =>
   err instanceof Error && err.message ? err.message : fallback;
+
+const getLatestSubscription = (restaurant: SaasRestaurant | null) => {
+  if (!restaurant?.subscriptions?.length) return null;
+  return restaurant.subscriptions[0];
+};
+
+// Module-scope on purpose: the day-diff against Date.now() is inherently
+// time-dependent (legacy behavior) and must stay out of component render
+// for the react-hooks purity rule.
+const getDaysRemaining = (restaurant: SaasRestaurant | null) => {
+  const subscription = getLatestSubscription(restaurant);
+  const endValue = subscription?.endsAt || restaurant?.expiresAt;
+  if (!endValue) return null;
+  const endDate = new Date(endValue);
+  if (Number.isNaN(endDate.getTime())) return null;
+  const diff = Math.ceil((endDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  return diff;
+};
+
+const getRemainingLabel = (restaurant: SaasRestaurant | null) => {
+  const days = getDaysRemaining(restaurant);
+  if (days == null) return 'Sin fecha';
+  if (days < 0) return `Vencido hace ${Math.abs(days)} día${Math.abs(days) === 1 ? '' : 's'}`;
+  if (days === 0) return 'Vence hoy';
+  if (days === 1) return 'Vence mañana';
+  return `Vence en ${days} días`;
+};
 
 export default function SaaSPanel({ token, onLogout }: SaaSPanelProps) {
   const [restaurants, setRestaurants] = useState<SaasRestaurant[]>([]);
@@ -105,15 +91,7 @@ export default function SaaSPanel({ token, onLogout }: SaaSPanelProps) {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${API_URL}/saas/restaurants`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'No se pudo cargar restaurantes');
-      }
+      const data = await apiFetch<SaasRestaurant[]>('/saas/restaurants');
       setRestaurants(Array.isArray(data) ? data : []);
     } catch (err) {
       setError(errorMessage(err, 'Error al cargar restaurantes'));
@@ -124,9 +102,11 @@ export default function SaaSPanel({ token, onLogout }: SaaSPanelProps) {
 
   useEffect(() => {
     if (token) {
+      // Legacy imperative load-on-mount kept as-is (this panel is intentionally
+      // NOT migrated to React Query yet — mechanical apiFetch swap only).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchRestaurants();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   const handleChange = (field: string, value: string) => {
@@ -200,19 +180,10 @@ export default function SaaSPanel({ token, onLogout }: SaaSPanelProps) {
         branchCode: form.branchCode,
       };
 
-      const res = await fetch(`${API_URL}/saas/restaurants`, {
+      await apiFetch('/saas/restaurants', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
         body: JSON.stringify(payload),
       });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'No se pudo crear el restaurante');
-      }
 
       setSuccess('Restaurante creado correctamente.');
       resetCreateForm();
@@ -232,11 +203,6 @@ export default function SaaSPanel({ token, onLogout }: SaaSPanelProps) {
   const getMainBranch = (restaurant: SaasRestaurant | null) => {
     if (!restaurant?.branches?.length) return null;
     return restaurant.branches[0];
-  };
-
-  const getLatestSubscription = (restaurant: SaasRestaurant | null) => {
-    if (!restaurant?.subscriptions?.length) return null;
-    return restaurant.subscriptions[0];
   };
 
   const formatDate = (value?: string | null) => {
@@ -274,54 +240,30 @@ export default function SaaSPanel({ token, onLogout }: SaaSPanelProps) {
     return 'bg-emerald-100 text-emerald-700';
   };
 
-  const getDaysRemaining = (restaurant: SaasRestaurant | null) => {
-    const subscription = getLatestSubscription(restaurant);
-    const endValue = subscription?.endsAt || restaurant?.expiresAt;
-    if (!endValue) return null;
-    const endDate = new Date(endValue);
-    if (Number.isNaN(endDate.getTime())) return null;
-    const diff = Math.ceil((endDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-    return diff;
-  };
-
-  const getRemainingLabel = (restaurant: SaasRestaurant | null) => {
-    const days = getDaysRemaining(restaurant);
-    if (days == null) return 'Sin fecha';
-    if (days < 0) return `Vencido hace ${Math.abs(days)} día${Math.abs(days) === 1 ? '' : 's'}`;
-    if (days === 0) return 'Vence hoy';
-    if (days === 1) return 'Vence mañana';
-    return `Vence en ${days} días`;
-  };
-
   const handleRenewSubscription = async (e: FormEvent) => {
     e.preventDefault();
 
     if (!selectedRestaurantToRenew) return;
 
     try {
-      const response = await fetch(
-        `${API_URL}/saas/restaurants/${selectedRestaurantToRenew.id}/renew`,
-        {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            plan: renewForm.plan,
-            amount: parseFloat(String(renewForm.amount)),
-          }),
-        }
-      );
+      await apiFetch(`/saas/restaurants/${selectedRestaurantToRenew.id}/renew`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          plan: renewForm.plan,
+          amount: parseFloat(String(renewForm.amount)),
+        }),
+      });
 
-      if (response.ok) {
-        setRenewModalOpen(false);
-        await fetchRestaurants();
-        alert('Suscripción reactivada con éxito');
-      } else {
-        alert('Error al procesar la renovación');
-      }
+      setRenewModalOpen(false);
+      await fetchRestaurants();
+      alert('Suscripción reactivada con éxito');
     } catch (err) {
+      // ApiError = non-2xx response (legacy `!response.ok` branch); anything else
+      // is a network-level failure (legacy catch branch).
+      if (err instanceof ApiError) {
+        alert('Error al procesar la renovación');
+        return;
+      }
       console.error('Detalle del error:', err);
       alert('Error real: ' + errorMessage(err, 'desconocido'));
     }
@@ -384,22 +326,13 @@ export default function SaaSPanel({ token, onLogout }: SaaSPanelProps) {
     setSuccess('');
 
     try {
-      const res = await fetch(`${API_URL}/saas/restaurants/${resetTarget.id}/reset-password`, {
+      await apiFetch(`/saas/restaurants/${resetTarget.id}/reset-password`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
         body: JSON.stringify({
           userId: adminUser.id,
           newPassword: resetForm.newPassword,
         }),
       });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'No se pudo restablecer la contraseña');
-      }
 
       setSuccess('Contraseña restablecida correctamente.');
       closeAllModals();
@@ -424,18 +357,9 @@ export default function SaaSPanel({ token, onLogout }: SaaSPanelProps) {
     setSuccess('');
 
     try {
-      const res = await fetch(`${API_URL}/saas/restaurants/${deleteTarget.id}`, {
+      await apiFetch(`/saas/restaurants/${deleteTarget.id}`, {
         method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
       });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        throw new Error(data.error || 'No se pudo eliminar el restaurante');
-      }
 
       setSuccess('Restaurante eliminado correctamente.');
       closeAllModals();
@@ -492,7 +416,9 @@ export default function SaaSPanel({ token, onLogout }: SaaSPanelProps) {
         );
         return acc + totalHistorial;
       }
-      return acc + (Number(restaurant.amount) || 0);
+      // Restaurant itself has no `amount` field in the API contract — only
+      // Subscription does. With no subscriptions there is nothing to add.
+      return acc;
     }, 0);
 
     return { active, suspended, annual, monthlyRevenue };
@@ -780,7 +706,7 @@ export default function SaaSPanel({ token, onLogout }: SaaSPanelProps) {
                                     Monto
                                   </p>
                                   <p className="mt-1 text-sm font-semibold text-slate-800">
-                                    {formatCurrency(latestSubscription?.amount ?? restaurant.amount)}
+                                    {formatCurrency(latestSubscription?.amount)}
                                   </p>
                                 </div>
                               </div>
@@ -932,7 +858,7 @@ export default function SaaSPanel({ token, onLogout }: SaaSPanelProps) {
               <div className="rounded-md bg-slate-50 p-4"><p className="text-sm text-slate-500">Administrador</p><p className="mt-1 font-semibold">{detailsAdmin ? `${detailsAdmin.firstName || ''} ${detailsAdmin.lastName || ''}`.trim() || '-' : '-'}</p></div>
               <div className="rounded-md bg-slate-50 p-4"><p className="text-sm text-slate-500">Correo admin</p><p className="mt-1 font-semibold break-all">{detailsAdmin?.email || '-'}</p></div>
               <div className="rounded-md bg-slate-50 p-4"><p className="text-sm text-slate-500">Plan</p><p className="mt-1 font-semibold">{detailsSubscription?.planType || restaurantInDetails.planType || '-'}</p></div>
-              <div className="rounded-md bg-slate-50 p-4"><p className="text-sm text-slate-500">Monto</p><p className="mt-1 font-semibold">{formatCurrency(detailsSubscription?.amount ?? restaurantInDetails.amount)}</p></div>
+              <div className="rounded-md bg-slate-50 p-4"><p className="text-sm text-slate-500">Monto</p><p className="mt-1 font-semibold">{formatCurrency(detailsSubscription?.amount)}</p></div>
               <div className="rounded-md bg-slate-50 p-4"><p className="text-sm text-slate-500">Inicio</p><p className="mt-1 font-semibold">{formatDate(detailsSubscription?.startsAt || restaurantInDetails.startsAt)}</p></div>
               <div className="rounded-md bg-slate-50 p-4"><p className="text-sm text-slate-500">Vencimiento</p><p className="mt-1 font-semibold">{formatDate(detailsSubscription?.endsAt || restaurantInDetails.expiresAt)}</p></div>
             </div>
