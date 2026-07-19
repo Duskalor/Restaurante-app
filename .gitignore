@@ -22,3 +22,9 @@ lerna-debug.log*
 *.njsproj
 *.sln
 *.sw?
+
+# tooling cache
+.atl/.skill-registry.cache.json
+
+# uploaded binaries (runtime data, not source)
+apps/backend/src/uploads/

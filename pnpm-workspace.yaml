@@ -1,0 +1,11 @@
+packages:
+  - apps/*
+  - packages/*
+allowBuilds:
+  '@prisma/client': true
+  '@prisma/engines': true
+  esbuild: true
+  prisma: true
+# The lint toolchain (eslint + typescript-eslint) lives in the ROOT package.json
+# with its own typescript ~5.9: typescript-eslint needs the classic TS JS API,
+# which typescript@7 (native compiler, used by the apps' tsc) does not expose.
